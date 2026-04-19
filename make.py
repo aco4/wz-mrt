@@ -283,7 +283,7 @@ html = f'''<!DOCTYPE html>
 </body>
 </html>'''
 
-with open('mrt.html', 'w') as f:
+with open('index.html', 'w') as f:
     f.write(html)
 
-print('mrt.html written.')
+print('index.html written.')
