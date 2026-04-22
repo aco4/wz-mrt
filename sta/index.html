@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>Warzone 2100 STA Editor</title>
+    <link rel='icon' type='image/x-icon' href='https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank1.png'>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        .editable {
+            image-rendering: pixelated;
+            image-rendering: -moz-crisp-edges;
+            image-rendering: crisp-edges;
+            cursor: pointer;
+            display: inline-block;
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+        .star-slot, .medal-slot {
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div style='display: none;'>
+        <img id='img_medal_baby' class='editable' src='https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_medal_dummy.png'>
+        <img id='img_medal_bronze' class='editable' src='https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_medal_bronze.png'>
+        <img id='img_medal_silver' class='editable' src='https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_medal_silver.png'>
+        <img id='img_medal_gold' class='editable' src='https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_medal_gold.png'>
+        <img id='img_star3' class='editable' src='https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank3.png'>
+        <img id='img_star2' class='editable' src='https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank2.png'>
+        <img id='img_star1' class='editable' src='https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank1.png'>
+    </div>
+
+    <div id='instructions'>
+        <ol>
+            <li>Open <code>📁multiplay/players</code></li>
+            <img src='open_configuration_directory.jpg' alt='Open Configuration Directory' style='width: 500px; margin: 1em'/>
+            <li>Drag and drop a <code>.sta2</code> file onto this page</li>
+        </ol>
+    </div>
+
+    <div>
+        <input id='upload' type='file' accept='.sta2' style='display: none;'>
+        <button id='browse'>Browse...</button>
+        <div id='filename' style='display: inline-block;'>No file selected.</div>
+    </div>
+
+    <div id='editor' style='display: none; margin: 1em;'></div>
+
+    <button id='download' style='display: none;'>Download</button>
+
+    <script>
+        const DISPLAY_SIZE = 64; // Adjust this to scale everything
+
+        const MEDAL = {
+            'BABY': -1,
+            'NONE': 0,
+            'LEVEL1': 1,
+            'LEVEL2': 2,
+            'LEVEL3': 3,
+        };
+
+        const STAR = {
+            'NONE': 0,
+            'BRONZE': 1,
+            'SILVER': 2,
+            'GOLD': 3,
+        };
+
+        let staContent = {
+            version     : 3,
+            wins        : 0,
+            losses      : 0,
+            totalKills  : 0,
+            totalScore  : 0,
+            gamesPlayed : 0,
+            privateKey  : ''
+        };
+
+        let currentDecoration = {
+            medal: 0,
+            star1: 0,
+            star2: 0,
+            star3: 0
+        };
+
+        // Upload: Browse
+        document.getElementById('browse').addEventListener('click', e => document.getElementById('upload').click());
+        document.getElementById('upload').addEventListener('change', e => handleFile(e.target.files?.[0]));
+
+        // Upload: Drag and drop
+        window.addEventListener('dragover', e => e.preventDefault());
+        window.addEventListener('drop', e => {
+            e.preventDefault();
+            handleFile(e.dataTransfer.files?.[0]);
+        });
+
+        // Download
+        document.getElementById('download').addEventListener('click', () => {
+            const { wins, losses, totalKills, totalScore, gamesPlayed } = fromDecoration(currentDecoration.medal, currentDecoration.star1, currentDecoration.star2, currentDecoration.star3);
+            let content = `WZ.STA.v3\n${wins} ${losses} ${totalKills} ${totalScore} ${gamesPlayed}`;
+            if (staContent.privateKey) {
+                content += `\n${staContent.privateKey}`;
+            }
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = document.getElementById('filename').textContent;
+            a.click();
+
+            URL.revokeObjectURL(url);
+        });
+
+        function handleFile(file) {
+            if (!file) {
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const match = event.target.result.match(/WZ\.STA\.v(?<version>\d+)\n(?<wins>\d+) (?<losses>\d+) (?<totalKills>\d+) (?<totalScore>\d+) (?<gamesPlayed>\d+)(\n(?<privateKey>.+))?/);
+                if (match && match.groups) {
+                    staContent = {
+                        version     : parseInt(match.groups.version),
+                        wins        : parseInt(match.groups.wins),
+                        losses      : parseInt(match.groups.losses),
+                        totalKills  : parseInt(match.groups.totalKills),
+                        totalScore  : parseInt(match.groups.totalScore),
+                        gamesPlayed : parseInt(match.groups.gamesPlayed),
+                        privateKey  : match.groups.privateKey || ''
+                    };
+                    const { wins, losses, totalKills, totalScore, gamesPlayed } = staContent;
+                    currentDecoration = toDecoration(wins, losses, totalKills, totalScore, gamesPlayed);
+                    updateEditor();
+
+                    document.getElementById('filename').textContent = file.name;
+
+                    // Unhide editor
+                    document.getElementById('editor').style.display = 'block';
+                    // Unhide download button
+                    document.getElementById('download').style.display = 'inline-block';
+                    // Hide instructions
+                    document.getElementById('instructions').style.display = 'none';
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function updateEditor() {
+            const { medal, star1, star2, star3 } = currentDecoration;
+            const container = document.getElementById('editor');
+            container.innerHTML = '';
+
+            // Always use table layout
+            const table = document.createElement('table');
+            const tr = document.createElement('tr');
+
+            // Left cell: stars in a column (hidden if BABY medal)
+            const starsCell = document.createElement('td');
+            starsCell.style.verticalAlign = 'middle';
+
+            if (medal === MEDAL.BABY) {
+                // Hide star column but keep the space
+                starsCell.style.visibility = 'hidden';
+                const starsDiv = document.createElement('div');
+                let placeholder = document.createElement('div');
+                placeholder.className = 'star-slot editable';
+                starsDiv.appendChild(placeholder);
+                starsDiv.appendChild(document.createElement('br'));
+                placeholder = document.createElement('div');
+                placeholder.className = 'star-slot editable';
+                starsDiv.appendChild(placeholder);
+                starsDiv.appendChild(document.createElement('br'));
+                placeholder = document.createElement('div');
+                placeholder.className = 'star-slot editable';
+                starsDiv.appendChild(placeholder);
+                starsCell.appendChild(starsDiv);
+            } else {
+                const starsDiv = document.createElement('div');
+
+                // Star1 slot (kills)
+                if (star1 === STAR.BRONZE) {
+                    const img = document.createElement('img');
+                    img.className = 'star editable';
+                    img.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank3.png';
+                    img.addEventListener('click', () => {
+                        currentDecoration.star1 = STAR.SILVER;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(img);
+                } else if (star1 === STAR.SILVER) {
+                    const img = document.createElement('img');
+                    img.className = 'star editable';
+                    img.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank2.png';
+                    img.addEventListener('click', () => {
+                        currentDecoration.star1 = STAR.GOLD;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(img);
+                } else if (star1 === STAR.GOLD) {
+                    const img = document.createElement('img');
+                    img.className = 'star editable';
+                    img.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank1.png';
+                    img.addEventListener('click', () => {
+                        currentDecoration.star1 = STAR.NONE;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(img);
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'star-slot editable';
+                    placeholder.addEventListener('click', () => {
+                        currentDecoration.star1 = STAR.BRONZE;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(placeholder);
+                }
+                starsDiv.appendChild(document.createElement('br'));
+
+                // Star2 slot (games played)
+                if (star2 === STAR.BRONZE) {
+                    const img = document.createElement('img');
+                    img.className = 'star editable';
+                    img.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank3.png';
+                    img.addEventListener('click', () => {
+                        currentDecoration.star2 = STAR.SILVER;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(img);
+                } else if (star2 === STAR.SILVER) {
+                    const img = document.createElement('img');
+                    img.className = 'star editable';
+                    img.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank2.png';
+                    img.addEventListener('click', () => {
+                        currentDecoration.star2 = STAR.GOLD;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(img);
+                } else if (star2 === STAR.GOLD) {
+                    const img = document.createElement('img');
+                    img.className = 'star editable';
+                    img.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank1.png';
+                    img.addEventListener('click', () => {
+                        currentDecoration.star2 = STAR.NONE;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(img);
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'star-slot editable';
+                    placeholder.addEventListener('click', () => {
+                        currentDecoration.star2 = STAR.BRONZE;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(placeholder);
+                }
+                starsDiv.appendChild(document.createElement('br'));
+
+                // Star3 slot (wins)
+                if (star3 === STAR.BRONZE) {
+                    const img = document.createElement('img');
+                    img.className = 'star editable';
+                    img.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank3.png';
+                    img.addEventListener('click', () => {
+                        currentDecoration.star3 = STAR.SILVER;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(img);
+                } else if (star3 === STAR.SILVER) {
+                    const img = document.createElement('img');
+                    img.className = 'star editable';
+                    img.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank2.png';
+                    img.addEventListener('click', () => {
+                        currentDecoration.star3 = STAR.GOLD;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(img);
+                } else if (star3 === STAR.GOLD) {
+                    const img = document.createElement('img');
+                    img.className = 'star editable';
+                    img.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_multirank1.png';
+                    img.addEventListener('click', () => {
+                        currentDecoration.star3 = STAR.NONE;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(img);
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'star-slot editable';
+                    placeholder.addEventListener('click', () => {
+                        currentDecoration.star3 = STAR.BRONZE;
+                        updateEditor();
+                    });
+                    starsDiv.appendChild(placeholder);
+                }
+
+                starsCell.appendChild(starsDiv);
+            }
+
+            tr.appendChild(starsCell);
+
+            // Right cell: medal
+            const medalCell = document.createElement('td');
+            medalCell.style.verticalAlign = 'middle';
+
+            if (medal === MEDAL.BABY) {
+                const medalImg = document.createElement('img');
+                medalImg.className = 'medal editable';
+                medalImg.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_medal_dummy.png';
+                medalImg.addEventListener('click', () => {
+                    currentDecoration.medal = MEDAL.NONE;
+                    updateEditor();
+                });
+                medalCell.appendChild(medalImg);
+            } else if (medal === MEDAL.LEVEL1) {
+                const medalImg = document.createElement('img');
+                medalImg.className = 'medal editable';
+                medalImg.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_medal_bronze.png';
+                medalImg.addEventListener('click', () => {
+                    currentDecoration.medal = MEDAL.LEVEL2;
+                    updateEditor();
+                });
+                medalCell.appendChild(medalImg);
+            } else if (medal === MEDAL.LEVEL2) {
+                const medalImg = document.createElement('img');
+                medalImg.className = 'medal editable';
+                medalImg.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_medal_silver.png';
+                medalImg.addEventListener('click', () => {
+                    currentDecoration.medal = MEDAL.LEVEL3;
+                    updateEditor();
+                });
+                medalCell.appendChild(medalImg);
+            } else if (medal === MEDAL.LEVEL3) {
+                const medalImg = document.createElement('img');
+                medalImg.className = 'medal editable';
+                medalImg.src = 'https://raw.githubusercontent.com/Warzone2100/warzone2100/refs/heads/master/data/base/images/frontend/image_medal_gold.png';
+                medalImg.addEventListener('click', () => {
+                    currentDecoration.medal = MEDAL.BABY;
+                    updateEditor();
+                });
+                medalCell.appendChild(medalImg);
+            } else {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'medal-slot editable';
+                placeholder.addEventListener('click', () => {
+                    currentDecoration.medal = MEDAL.LEVEL1;
+                    updateEditor();
+                });
+                medalCell.appendChild(placeholder);
+            }
+
+            tr.appendChild(medalCell);
+            table.appendChild(tr);
+            container.appendChild(table);
+
+            if (medal === MEDAL.LEVEL2 && star3 === STAR.NONE ||
+                medal === MEDAL.LEVEL3 && star3 === STAR.NONE) {
+                document.getElementById('download').disabled = true;
+            } else {
+                document.getElementById('download').disabled = false;
+            }
+        }
+
+        function fromDecoration(medal, star1, star2, star3) {
+            // BABY medal early exit - all zeros satisfy gamesPlayed < 5
+            if (medal === MEDAL.BABY) {
+                return {
+                    wins: 0,
+                    losses: 0,
+                    totalKills: 0,
+                    totalScore: 0,
+                    gamesPlayed: 0
+                };
+            }
+
+            const result = {
+                wins: 0,
+                losses: 0,
+                totalKills: 0,
+                totalScore: 0,
+                gamesPlayed: 0
+            };
+
+            // Derive totalKills from star1
+            if (star1 === STAR.GOLD) {
+                result.totalKills = 601;
+            } else if (star1 === STAR.SILVER) {
+                result.totalKills = 301;
+            } else if (star1 === STAR.BRONZE) {
+                result.totalKills = 151;
+            } else {
+                result.totalKills = 0;
+            }
+
+            // Derive gamesPlayed from star2
+            if (star2 === STAR.GOLD) {
+                result.gamesPlayed = 201;
+            } else if (star2 === STAR.SILVER) {
+                result.gamesPlayed = 101;
+            } else if (star2 === STAR.BRONZE) {
+                result.gamesPlayed = 51;
+            } else {
+                // All non-BABY medals require gamesPlayed >= 5
+                result.gamesPlayed = 5;
+            }
+
+            // Derive wins from star3
+            if (star3 === STAR.GOLD) {
+                result.wins = 81;
+            } else if (star3 === STAR.SILVER) {
+                result.wins = 41;
+            } else if (star3 === STAR.BRONZE) {
+                result.wins = 11;
+            } else {
+                result.wins = 0;
+            }
+
+            // Derive losses from medal (ensuring win ratio constraints are met)
+            if (medal === MEDAL.LEVEL3) {
+                // wins >= 24 && wins > 8 * losses
+                result.wins = Math.max(result.wins, 24);
+                result.losses = Math.floor(result.wins / 9); // Ensure wins > 8 * losses
+            } else if (medal === MEDAL.LEVEL2) {
+                // wins >= 12 && wins > 4 * losses
+                result.wins = Math.max(result.wins, 12);
+                result.losses = Math.floor(result.wins / 5); // Ensure wins > 4 * losses
+            } else if (medal === MEDAL.LEVEL1) {
+                // wins >= 6 && wins > 2 * losses
+                result.wins = Math.max(result.wins, 6);
+                result.losses = Math.floor(result.wins / 3); // Ensure wins > 2 * losses
+            } else {
+                // MEDAL.NONE - must NOT satisfy any LEVEL requirements
+                result.losses = result.wins; // Ensure we don't satisfy ratio requirements
+            }
+
+            return result;
+        }
+
+        function toDecoration(wins, losses, totalKills, totalScore, gamesPlayed) {
+            const decoration = {
+                medal: MEDAL.NONE,
+                star1: STAR.NONE,
+                star2: STAR.NONE,
+                star3: STAR.NONE,
+            };
+
+            // star 1 = total droid kills
+            if (totalKills > 600) {
+                decoration.star1 = STAR.GOLD;
+            } else if (totalKills > 300) {
+                decoration.star1 = STAR.SILVER;
+            } else if (totalKills > 150) {
+                decoration.star1 = STAR.BRONZE;
+            } else {
+                decoration.star1 = STAR.NONE;
+            }
+
+            // star 2 = games played
+            if (gamesPlayed > 200) {
+                decoration.star2 = STAR.GOLD;
+            } else if (gamesPlayed > 100) {
+                decoration.star2 = STAR.SILVER;
+            } else if (gamesPlayed > 50) {
+                decoration.star2 = STAR.BRONZE;
+            } else {
+                decoration.star2 = STAR.NONE;
+            }
+
+            // star 3 = games won
+            if (wins > 80) {
+                decoration.star3 = STAR.GOLD;
+            } else if (wins > 40) {
+                decoration.star3 = STAR.SILVER;
+            } else if (wins > 10) {
+                decoration.star3 = STAR.BRONZE;
+            } else {
+                decoration.star3 = STAR.NONE;
+            }
+
+            // medal = win ratio
+            if (gamesPlayed < 5) {
+                decoration.medal = MEDAL.BABY;
+            } else if (wins >= 24 && wins > 8 * losses) {
+                decoration.medal = MEDAL.LEVEL3;
+            } else if (wins >= 12 && wins > 4 * losses) {
+                decoration.medal = MEDAL.LEVEL2;
+            } else if (wins >= 6 && wins > 2 * losses) {
+                decoration.medal = MEDAL.LEVEL1;
+            } else {
+                decoration.medal = MEDAL.NONE;
+            }
+
+            return decoration;
+        }
+
+        // Initialize display
+        updateEditor();
+
+        // Apply dynamic sizing
+        function applyStyles() {
+            const style = document.createElement('style');
+            style.textContent = `
+                img.star {
+                    width: ${DISPLAY_SIZE}px;
+                    height: ${DISPLAY_SIZE}px;
+                }
+                img.medal {
+                    width: ${DISPLAY_SIZE}px;
+                    height: auto;
+                }
+                .star-slot, .medal-slot {
+                    width: ${DISPLAY_SIZE}px;
+                    height: ${DISPLAY_SIZE}px;
+                    display: inline-block;
+                    border: 2px dashed #ccc;
+                    cursor: pointer;
+                    box-sizing: border-box;
+                }
+            `;
+            document.head.appendChild(style);
+        }
+        applyStyles();
+    </script>
+</body>
+</html>
