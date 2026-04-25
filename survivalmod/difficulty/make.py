@@ -1,3 +1,6 @@
+# Usage:
+# python3 make.py /path/to/TEMPLATES.js
+
 import re
 import json
 import sys
@@ -125,8 +128,9 @@ ax.tick_params(axis="y", labelcolor=HP_COLOR)
 ax2.tick_params(axis="y", labelcolor=BP_COLOR)
 
 ax.set_title("Warzone 2100 — Difficulty Scaling by Minute", fontsize=13)
-ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
-ax.tick_params(axis="x", labelrotation=90, labelsize=8)
+ax.xaxis.set_major_locator(ticker.MultipleLocator(10))
+ax.xaxis.set_minor_locator(ticker.MultipleLocator(1))
+ax.tick_params(axis="x")
 ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
 ax2.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:,.0f}"))
 
@@ -135,7 +139,8 @@ ax.set_ylim(0)
 ax2.set_ylim(0)
 
 ax.grid(axis="y", linestyle="--", alpha=0.3)
-ax.grid(axis="x", linestyle=":", alpha=0.2)
+ax.grid(axis="x", which="major", alpha=0.4)
+ax.grid(axis="x", which="minor", alpha=0.15)
 
 # Combined legend
 lines1, labels1 = ax.get_legend_handles_labels()
@@ -143,6 +148,6 @@ lines2, labels2 = ax2.get_legend_handles_labels()
 ax.legend(lines1 + lines2, labels1 + labels2, loc="upper left", fontsize=10)
 
 plt.tight_layout()
-plt.savefig("wz2100_difficulty.png", dpi=150)
+plt.savefig("wz2100_difficulty.svg")
 plt.show()
-print("\nSaved to wz2100_difficulty.png")
+print("\nSaved to wz2100_difficulty.svg")
